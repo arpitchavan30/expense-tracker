@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+
+    <style>
+        body{
+            font-family: Arial, sans-serif;
+            max-width: 950px;
+            margin: auto;
+            padding: 20px;
+            background: #f5f6fa;
+        }
+        h1{
+            text-align: center;
+        }
+        .card{
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        input, select, button{
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            box-sizing: border-box;
+        }
+        button{
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover{
+            opacity: .9;
+        }
+        button:disabled{
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .row{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        table{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td{
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        .success{
+            color: green;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .error{
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>Expense Tracker</h1>
+
+<!-- Add Expense -->
+<div class="card">
+    <h3>Add New Expense</h3>
+
+    <input type="number" step="0.01" id="amount" placeholder="Enter Amount">
+
+    <select id="category">
+        <option value="">Select Category</option>
+        <option value="Food">Food</option>
+        <option value="Travel">Travel</option>
+        <option value="Bills">Bills</option>
+        <option value="Shopping">Shopping</option>
+        <option value="Health">Health</option>
+        <option value="Other">Other</option>
+    </select>
+
+    <input type="text" id="description" placeholder="Description">
+
+    <input type="date" id="date">
+
+    <button id="submitBtn" onclick="addExpense()">Add Expense</button>
+
+    <div id="message"></div>
+</div>
+
+<!-- Filters -->
+<div class="card">
+
+    <div class="row">
+        <div>
+            <select id="filterCategory" onchange="loadExpenses()">
+                <option value="">All Categories</option>
+                <option value="Food">Food</option>
+                <option value="Travel">Travel</option>
+                <option value="Bills">Bills</option>
+                <option value="Shopping">Shopping</option>
+                <option value="Health">Health</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
+
+        <div>
+            <select id="sort" onchange="loadExpenses()">
+                <option value="">Default</option>
+                <option value="DATE_DESC">Newest First</option>
+            </select>
+        </div>
+    </div>
+
+    <h3>Total Spend: ₹<span id="total">0.00</span></h3>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Date</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Amount</th>
+        </tr>
+        </thead>
+
+        <tbody id="expenseBody"></tbody>
+    </table>
+</div>
+
+<script>
+
+let currentRequestKey = null;
+
+async function addExpense() {
+
+    const btn = document.getElementById("submitBtn");
+    const message = document.getElementById("message");
+
+    message.innerHTML = "";
+    message.className = "";
+
+    const payload = {
+        amount: parseFloat(document.getElementById("amount").value),
+        category: document.getElementById("category").value,
+        description: document.getElementById("description").value,
+        date: document.getElementById("date").value
+    };
+
+    if(!payload.amount || !payload.category || !payload.date){
+        message.className = "error";
+        message.innerHTML = "Amount, Category and Date are required.";
+        return;
+    }
+
+    if(!currentRequestKey){
+        currentRequestKey = crypto.randomUUID();
+    }
+
+    btn.disabled = true;
+    btn.innerText = "Saving...";
+
+    try {
+
+        const response = await fetch("/expenses/create", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Idempotency-Key": currentRequestKey
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if(response.ok){
+
+            message.className = "success";
+            message.innerHTML = "Expense added successfully.";
+
+            clearForm();
+            loadExpenses();
+
+            currentRequestKey = null;
+
+        } else {
+
+            message.className = "error";
+            message.innerHTML = "Failed to add expense.";
+        }
+
+    } catch(error){
+
+        console.error(error);
+        message.className = "error";
+        message.innerHTML = "Network error occurred.";
+
+    } finally {
+
+        btn.disabled = false;
+        btn.innerText = "Add Expense";
+    }
+}
+
+function clearForm(){
+    document.getElementById("amount").value = "";
+    document.getElementById("category").value = "";
+    document.getElementById("description").value = "";
+    document.getElementById("date").value = "";
+}
+
+async function loadExpenses(){
+
+    const category = document.getElementById("filterCategory").value;
+    const sort = document.getElementById("sort").value;
+
+    let url = "/expenses/getAll?";
+
+    if(category){
+        url += "category=" + encodeURIComponent(category) + "&";
+    }
+
+    if(sort){
+        url += "sort=" + encodeURIComponent(sort);
+    }
+
+    try {
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        let rows = "";
+        let total = 0;
+
+        data.forEach(expense => {
+
+            rows += `
+            <tr>
+                <td>${expense.expenseDate}</td>
+                <td>${expense.category}</td>
+                <td>${expense.description ? expense.description : ''}</td>
+                <td>₹${expense.amount}</td>
+            </tr>
+            `;
+
+            total += parseFloat(expense.amount);
+        });
+
+        document.getElementById("expenseBody").innerHTML = rows;
+        document.getElementById("total").innerHTML = total.toFixed(2);
+
+    } catch(error){
+        console.error("Failed to load expenses", error);
+    }
+}
+
+loadExpenses();
+
+</script>
+
+</body>
+</html>
